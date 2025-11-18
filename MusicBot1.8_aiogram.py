@@ -11,7 +11,6 @@ from bs4 import BeautifulSoup as bs
 # Import config
 config_path = "/app/MusicBot.conf"  
 
-config_path = "/home/mike/Code/Python/MusicBot/musicbot_docker/MusicBot.conf"
 if not os.path.exists(config_path):
     raise FileNotFoundError(f"Config file not found at {config_path}")
 config = configparser.ConfigParser()
