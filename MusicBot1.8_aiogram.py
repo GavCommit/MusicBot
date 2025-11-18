@@ -41,6 +41,9 @@ async def start(message: types.Message):
 async def handle_text(message: types.Message):
     user_id = message.from_user.id
     query = message.text.strip()
+    if len(query) < 3:
+        await message.answer("Запрос для поиска не менее 3х символов")
+        return
 
     if user_id not in user_data:
         user_data[user_id] = {"songs": [], "links": []}
