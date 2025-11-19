@@ -5,7 +5,7 @@ import configparser
 import difflib
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from bs4 import BeautifulSoup as bs
 import logging
 
@@ -167,20 +167,19 @@ async def download_song(callback: CallbackQuery):
             if button.callback_data == id:
                 song = button.text                
    
-    await callback.message.answer(song + "  " + link)
-    filename = song.replace(")", "").split('(')[0].replace(" ", "_") + ".mp3"   
-    await download(message=callback.message, filename=filename, link=link)
+    filename = song.replace(")", "").split("(")[0].replace(" ", "_").replace("/", "_") + ".mp3" 
+    await download(callback=callback, filename=filename, link=link)
     await callback.answer()
 
 
 # Downloading
-async def download(message, filename: str, link: str):
+async def download(callback, filename: str, link: str):
     try:
         download_url = await get_downloadlink(link)
         if not download_url:
             download_url = await get_downloadlink(link)
             if not download_url:
-                await message.answer("Не удалось получить ссылку на скачивание.")
+                await callback.answer("Не удалось получить ссылку на скачивание.", show_alert=True)
                 return
 
         async with aiohttp.ClientSession() as session:
@@ -188,23 +187,24 @@ async def download(message, filename: str, link: str):
                 file_size = int(response.headers.get("Content-Length", 0))
 
                 if file_size > FILE_SIZE_LIMIT:
-                    await message.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.")
+                    await callback.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.", show_alert=True)
                     return
 
-                await bot.send_chat_action(message.chat.id, "record_voice")
+                await bot.send_chat_action(callback.message.chat.id, "record_voice")
                 with open(filename, 'wb') as f:
                     async for chunk in response.content.iter_chunked(512):
                         f.write(chunk)
 
-                with open(filename, 'rb') as audio_file:
-                    await bot.send_chat_action(message.chat.id, 'upload_document')
-                    await bot.send_audio(message.chat.id, audio_file)
+                await bot.send_chat_action(callback.message.chat.id, 'upload_document')
+                
+                audio_file = FSInputFile(filename, filename=filename)
+                await callback.message.answer_audio(audio_file) # title='название', performer='исполнитель' 
 
         os.remove(filename)
 
     except Exception as ex:
-        print(f"[!] (download) Ошибка загрузки: {ex}")
-        await message.answer("Ошибка при загрузке. Попробуйте снова.")
+        print(ex)
+        await callback.answer("Ошибка при загрузке. Попробуйте снова.", show_alert=True)
 
 # Get download link
 async def get_downloadlink(link: str) -> str: # HAVE TO BE UPDATED
@@ -222,7 +222,7 @@ async def get_downloadlink(link: str) -> str: # HAVE TO BE UPDATED
                             name = data.findAll('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
                         if href:
-                            return muzmo_baselink+href
+                            return base_url+href
 
 
         except Exception as ex:
