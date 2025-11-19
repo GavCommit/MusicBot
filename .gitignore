@@ -96,3 +96,4 @@ test.py
 dockerfile
 musicbot/
 MusicBot.conf
+moderation_handlers.py
