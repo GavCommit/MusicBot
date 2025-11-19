@@ -19,6 +19,8 @@ config.read(config_path)
 
 TOKEN = config.get("Settings", "TOKEN")
 FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # in Mbites
+PAGES_SCANNING = config.getint("Settings", "PAGES_SCANNING")
+SEARCH_RESULTS = config.getint("Settings", "SEARCH_RESULTS")
 base_url = "https://rmr.muzmo.cc"
 
 bot = Bot(token=TOKEN)
@@ -44,9 +46,9 @@ async def handle_text(message: Message):
         await message.answer("Запрос для поиска не менее 3х символов")
         return
 
-    music_data = await get_music(query=query, pages=3) # делаем запросы к сайту (асинхрон, несколько страниц)
+    music_data = await get_music(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту (асинхрон, несколько страниц)
 
-    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=12) # фильтруем результат поиска, находим наибольшее совпадение
+    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=SEARCH_RESULTS) # фильтруем результат поиска, находим наибольшее совпадение
 
     await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered) #отправка клавиатуры с песнями
 
@@ -150,7 +152,7 @@ async def send_downloading_kb(message, url:str = base_url, music_data_filtered: 
             )
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer(
-        f'Музыка найдена на сайте  <a href="{base_url}">Muzmo</a>.  <a href="{base_url+url}">На сайт</a>.',
+        f'Музыка найдена на сайте <a href="{base_url}">Muzmo</a>.  <a href="{base_url+url}">На сайт</a>.',
         parse_mode="HTML",
         reply_markup=kb
         )
@@ -220,11 +222,11 @@ async def get_downloadlink(link: str) -> str:
                 async with semaphore, session.get(link) as response:
                     html = await response.text()
                     data = bs(html, 'html.parser')
-                    name = data.findAll('a', class_='block')
+                    name = data.find_all('a', class_='block')
                     if name:
                         href = [i['href'] for i in name if i['href'].startswith('/get/music')][0]
                         if not href:
-                            name = data.findAll('div', class_='mzmlght')[1]
+                            name = data.find_all('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
                         if href:
                             return base_url+href

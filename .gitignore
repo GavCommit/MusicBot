@@ -93,6 +93,4 @@ venv.bak/
 # Config
 config.py
 test.py
-dockerfile
-musicbot/
 MusicBot.conf

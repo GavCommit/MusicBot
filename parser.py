@@ -25,7 +25,7 @@ muzmo_baselink = "https://rmr.muzmo.cc"
 #                return {"success" : False, "error" : f"Responce code: {response.status_code}"}
 #
 #        data = bs(response.text, "html.parser")
-#        names = data.findAll('a', class_="block")
+#        names = data.find_all('a', class_="block")
 #        for item in names:
 #            href = item.get('href', '')
 #
