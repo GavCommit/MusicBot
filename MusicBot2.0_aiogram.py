@@ -1,4 +1,4 @@
-import os
+import os, re
 import aiohttp
 import asyncio
 import configparser
@@ -165,9 +165,11 @@ async def download_song(callback: CallbackQuery):
     for row in callback.message.reply_markup.inline_keyboard:
         for button in row:
             if button.callback_data == id:
-                song = button.text                
-   
-    filename = song.replace(")", "").split("(")[0].replace(" ", "_").replace("/", "_") + ".mp3" 
+                song = button.text   
+
+    pattern = r'\s*\(\d+:\d+\)\s*$'
+    song_without_timer = re.sub(pattern, "", song).strip()
+    filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3" 
     await download(callback=callback, filename=filename, link=link)
     await callback.answer()
 
