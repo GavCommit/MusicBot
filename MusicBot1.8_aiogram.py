@@ -4,8 +4,7 @@ import aiohttp
 import asyncio
 import configparser
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
-from aiogram.utils import executor
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ParseMode
 from bs4 import BeautifulSoup as bs
 
 # Import config
@@ -26,14 +25,14 @@ dp = Dispatcher(bot)
 semaphore = asyncio.Semaphore(10)
 
 # /start
-@dp.message_handler(commands=["start"])
+@dp.message(F.chat.type == "private", Command(commands=['start','старт','от_винта']))
 async def start(message: types.Message):
     greeting = f"Здравствуйте, {message.from_user.first_name}! Этот бот поможет вам найти и скачать музыку."
     await message.answer(greeting)
     await message.answer("Введите название песни или исполнителя:")
 
 # Message handler (music search)
-@dp.message_handler(content_types=types.ContentTypes.TEXT)
+@dp.message()
 async def handle_text(message: types.Message):
     query = message.text.strip().replace(" ", "+")
 
@@ -55,7 +54,6 @@ async def get_music(query: str, pages: int = 3) -> list:
             session.get(f"{base_url}/search?q={query}&start={page*15}", timeout=10)
             for page in range(pages)
         ]
-        
         responses = await asyncio.gather(*tasks, return_exceptions=True)
         all_music_data = []
         
@@ -83,7 +81,6 @@ async def get_music(query: str, pages: int = 3) -> list:
                                 continue
             
         return all_music_data
-
 
 #song filter
 async def top_songs(music_data, query, top_count=10):
@@ -138,13 +135,25 @@ async def send_downloading_kb(message, url:str = base_url, music_data_filtered: 
 
     if not music_data_filtered: # если musiс_data пустая
         await message.answer(f"К сожалению, ничего не найдено\. [Посмотреть на сайте]({base_url+url})\.", parse_mode=ParseMode.MARKDOWN_V2)
-    
-    
+
+    buttons = []
+    for song in music_data_filtered:
+        buttons.append(
+            [InlineKeyboardButton(
+            text=song[0],
+            callback_data=song[1][:6]
+            )]
+            )
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.answer(
+        f"Музыка найдена на сайте [Muzmo]({muzmo_baselink})\.  [На сайт]({base_url+url})\.",
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=kb
+        )
 
 # Button handler
-@dp.callback_query_handler(lambda callback: True)
+@dp.callback_query()
 async def callback(callback: types.CallbackQuery):
-    user_id, index = map(int, callback.data.split(":"))
 
     song_name = user_songs[index]
     filename = song_name.replace(")", "").split('(')[0].replace(" ", "_") + ".mp3"
@@ -210,7 +219,9 @@ async def get_downloadlink(link: str) -> str: # HAVE TO BE UPDATED
 
     return None
 
+async def main():
+    await dp.start_polling(bot)
+
 # Bot startup
 if __name__ == "__main__":
-    
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
