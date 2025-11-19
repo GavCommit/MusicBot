@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from bs4 import BeautifulSoup as bs
-import logging
+#import logging
 
 # Import config
 config_path = "MusicBot.conf"  
@@ -23,8 +23,8 @@ base_url = "https://rmr.muzmo.cc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
+#logger = logging.getLogger(__name__)
 
 semaphore = asyncio.Semaphore(10)
 
@@ -236,8 +236,10 @@ async def get_downloadlink(link: str) -> str:
     return None
 
 async def main():
+    
     await dp.start_polling(bot)
 
 # Bot startup
 if __name__ == "__main__":
+    print("Bot starts polling...")
     asyncio.run(main())
