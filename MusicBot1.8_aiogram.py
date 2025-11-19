@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from bs4 import BeautifulSoup as bs
+import logging
 
 # Import config
 config_path = "MusicBot.conf"  
@@ -22,6 +23,8 @@ base_url = "https://rmr.muzmo.cc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 semaphore = asyncio.Semaphore(10)
 
@@ -45,7 +48,7 @@ async def handle_text(message: Message):
 
     music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=10) # фильтруем результат поиска, находим наибольшее совпадение
 
-    await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered)
+    await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered) #отправка клавиатуры с песнями
 
 
 # Async music parser
@@ -76,7 +79,7 @@ async def get_music(query: str, pages: int = 3) -> list:
                                 time = text.split('(')[1].split(',')[0].strip()
                                 all_music_data.append((
                                     f"{name}({time})",
-                                    f"{base_url}{href}"
+                                    f"{href[9:]}" # {base_url} получаем просто id песни
                                 ))
                             except IndexError:
                                 continue
@@ -135,13 +138,14 @@ async def top_songs(music_data, query, top_count=10):
 async def send_downloading_kb(message, url:str = base_url, music_data_filtered: list = []):
     if not music_data_filtered: # если musiс_data пустая
         await message.answer(f'К сожалению, ничего не найдено. <a href="{base_url+url}">Посмотреть на сайте</a>.', parse_mode="HTML")
+        return 
 
     buttons = []
-    for song in music_data_filtered:
+    for song, id in music_data_filtered:
         buttons.append(
             [InlineKeyboardButton(
-            text=song[0],
-            callback_data=song[1][:6]
+            text=song,
+            callback_data=id
             )]
             )
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -153,17 +157,24 @@ async def send_downloading_kb(message, url:str = base_url, music_data_filtered: 
 
 # Button handler
 @dp.callback_query()
-async def callback(callback: CallbackQuery):
+async def download_song(callback: CallbackQuery):
+    id = callback.data
+    link = base_url + "/info?id=" + id
 
-    song_name = user_songs[index]
-    filename = song_name.replace(")", "").split('(')[0].replace(" ", "_") + ".mp3"
-    link = user_links[index]
-    
-    await download(callback.message, filename, link)
+    song = "не_найдена"
+    for row in callback.message.reply_markup.inline_keyboard:
+        for button in row:
+            if button.callback_data == id:
+                song = button.text                
+   
+    await callback.message.answer(song + "  " + link)
+    filename = song.replace(")", "").split('(')[0].replace(" ", "_") + ".mp3"   
+    await download(message=callback.message, filename=filename, link=link)
+    await callback.answer()
 
 
 # Downloading
-async def download(message: Message, filename: str, link: str):
+async def download(message, filename: str, link: str):
     try:
         download_url = await get_downloadlink(link)
         if not download_url:
