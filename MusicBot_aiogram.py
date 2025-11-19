@@ -152,7 +152,7 @@ async def send_downloading_kb(message, url:str = base_url, music_data_filtered: 
             )
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer(
-        f'Музыка найдена на сайте  <a href="{base_url}">Muzmo</a>.  <a href="{base_url+url}">На сайт</a>.',
+        f'Музыка найдена на сайте <a href="{base_url}">Muzmo</a>.  <a href="{base_url+url}">На сайт</a>.',
         parse_mode="HTML",
         reply_markup=kb
         )
