@@ -35,17 +35,21 @@ async def start(message: types.Message):
 # Message handler (music search)
 @dp.message_handler(content_types=types.ContentTypes.TEXT)
 async def handle_text(message: types.Message):
-    query = message.text.strip()
+    query = message.text.strip().replace(" ", "+")
+
     if len(query) < 3:
         await message.answer("Запрос для поиска не менее 3х символов")
         return
 
-    music_data = await get_music(message, query)
+    music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
+
+    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=10) # фильтруем результат поиска, находим наибольшее совпадение
+
+    await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered)
 
 
 # Async music parser
 async def get_music(query: str, pages: int = 3) -> list:
-
     async with aiohttp.ClientSession() as session:
         tasks = [
             session.get(f"{base_url}/search?q={query}&start={page*15}", timeout=10)
@@ -129,22 +133,25 @@ async def top_songs(music_data, query, top_count=10):
     all_scores.sort(key=lambda x: x[0], reverse=True)
     return [song for _, song in all_scores[:top_count]]
 
+
+async def send_downloading_kb(message, url:str = base_url, music_data_filtered: list = []):
+
+    if not music_data_filtered: # если musiс_data пустая
+        await message.answer(f"К сожалению, ничего не найдено\. [Посмотреть на сайте]({base_url+url})\.", parse_mode=ParseMode.MARKDOWN_V2)
+    
+    
+
 # Button handler
 @dp.callback_query_handler(lambda callback: True)
 async def callback(callback: types.CallbackQuery):
     user_id, index = map(int, callback.data.split(":"))
-    user_songs = user_data.get(user_id, {}).get("songs", [])
-    user_links = user_data.get(user_id, {}).get("links", [])
-
-    if not user_songs or not user_links:
-        await callback.message.answer("Ошибка: данные о песнях отсутствуют. Попробуйте начать заново.")
-        return
 
     song_name = user_songs[index]
     filename = song_name.replace(")", "").split('(')[0].replace(" ", "_") + ".mp3"
     link = user_links[index]
     
     await download(callback.message, filename, link)
+
 
 # Downloading
 async def download(message: types.Message, filename: str, link: str):
@@ -156,8 +163,6 @@ async def download(message: types.Message, filename: str, link: str):
                 await message.answer("Не удалось получить ссылку на скачивание.")
                 return
 
-        
-        
         async with aiohttp.ClientSession() as session:
             async with semaphore, session.get(download_url) as response:
                 file_size = int(response.headers.get("Content-Length", 0))
@@ -165,7 +170,6 @@ async def download(message: types.Message, filename: str, link: str):
                 if file_size > FILE_SIZE_LIMIT:
                     await message.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.")
                     return
-
 
                 await bot.send_chat_action(message.chat.id, "record_voice")
                 with open(filename, 'wb') as f:
@@ -183,26 +187,20 @@ async def download(message: types.Message, filename: str, link: str):
         await message.answer("Ошибка при загрузке. Попробуйте снова.")
 
 # Get download link
-async def get_downloadlink(link: str) -> str:
+async def get_downloadlink(link: str) -> str: # HAVE TO BE UPDATED
     async with aiohttp.ClientSession() as session:
         try:
             href = None
             while not href:    
                 async with semaphore, session.get(link) as response:
-                    
                     html = await response.text()
-                   
                     data = bs(html, 'html.parser')
-                                        
                     name = data.findAll('a', class_='block')
-                    
                     if name:
                         href = [i['href'] for i in name if i['href'].startswith('/get/music')][0]
-
                         if not href:
                             name = data.findAll('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
-
                         if href:
                             return muzmo_baselink+href
 
