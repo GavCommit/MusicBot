@@ -44,9 +44,9 @@ async def handle_text(message: Message):
         await message.answer("Запрос для поиска не менее 3х символов")
         return
 
-    music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
+    music_data = await get_music(query=query, pages=3) # делаем запросы к сайту (асинхрон, несколько страниц)
 
-    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=10) # фильтруем результат поиска, находим наибольшее совпадение
+    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=12) # фильтруем результат поиска, находим наибольшее совпадение
 
     await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered) #отправка клавиатуры с песнями
 
@@ -197,8 +197,11 @@ async def download(callback, filename: str, link: str):
 
                 await bot.send_chat_action(callback.message.chat.id, 'upload_document')
                 
+                performer = filename.split("_-_")[0].strip("_").replace("_", " ")
+                title = filename.split("_-_")[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ")
+
                 audio_file = FSInputFile(filename, filename=filename)
-                await callback.message.answer_audio(audio_file) # title='название', performer='исполнитель' 
+                await callback.message.answer_audio(audio_file, title=title, performer=performer) # title='название', performer='исполнитель' 
 
         os.remove(filename)
 
@@ -207,7 +210,7 @@ async def download(callback, filename: str, link: str):
         await callback.answer("Ошибка при загрузке. Попробуйте снова.", show_alert=True)
 
 # Get download link
-async def get_downloadlink(link: str) -> str: # HAVE TO BE UPDATED
+async def get_downloadlink(link: str) -> str: 
     async with aiohttp.ClientSession() as session:
         try:
             href = None

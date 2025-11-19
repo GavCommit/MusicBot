@@ -150,9 +150,9 @@ def output_print(query, music_data, music_data_filtered):
     for song in music_data[:len(music_data_filtered)]:
         print(song[0])
 
-
+# 
 async def main():
-    query = "Радио Тапок"
+    query = "Игорь Тальков - я вернусь"
 
     music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
 
