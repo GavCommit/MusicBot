@@ -208,7 +208,7 @@ async def download(callback, filename: str, link: str):
         os.remove(filename)
 
     except Exception as ex:
-        print(ex)
+        print(f"[!] (download) Ошибка загрузки: {ex}")
         await callback.answer("Ошибка при загрузке. Попробуйте снова.", show_alert=True)
 
 # Get download link
