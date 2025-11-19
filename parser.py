@@ -152,9 +152,9 @@ def output_print(query, music_data, music_data_filtered):
 
 
 async def main():
-    query = "Ария"
+    query = "Радио Тапок"
 
-    music_data = await get_music(query=query, pages=2) # делаем запросы к сайту (асинхрон, несколько страниц)
+    music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
 
     music_data_filtered = await top_songs(music_data, query) # фильтруем результат поиска, находим наибольшее совпадение
 

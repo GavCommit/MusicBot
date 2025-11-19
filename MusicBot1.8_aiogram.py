@@ -18,20 +18,16 @@ config.read(config_path)
 
 TOKEN = config.get("Settings", "TOKEN")
 FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # in Mbites
-muzmo_baselink = "https://rmr.muzmo.cc"
+base_url = "https://rmr.muzmo.cc"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
-user_data = {}
-
 
 semaphore = asyncio.Semaphore(10)
 
 # /start
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    user_id = message.from_user.id
-    user_data[user_id] = {"songs": [], "links": []}
     greeting = f"Здравствуйте, {message.from_user.first_name}! Этот бот поможет вам найти и скачать музыку."
     await message.answer(greeting)
     await message.answer("Введите название песни или исполнителя:")
@@ -39,52 +35,99 @@ async def start(message: types.Message):
 # Message handler (music search)
 @dp.message_handler(content_types=types.ContentTypes.TEXT)
 async def handle_text(message: types.Message):
-    user_id = message.from_user.id
     query = message.text.strip()
     if len(query) < 3:
         await message.answer("Запрос для поиска не менее 3х символов")
         return
 
-    if user_id not in user_data:
-        user_data[user_id] = {"songs": [], "links": []}
+    music_data = await get_music(message, query)
 
-    await get_music(message, query)
 
 # Async music parser
-async def get_music(message: types.Message, query: str):
-    user_id = message.from_user.id
-    user_data[user_id] = {"songs": [], "links": []}
-
-    search_query = query.replace(" ", "+")
+async def get_music(query: str, pages: int = 3) -> list:
 
     async with aiohttp.ClientSession() as session:
-        url = f"{muzmo_baselink}/search?q={search_query}"
-         
-        try:
-            async with semaphore, session.get(url) as response:
+        tasks = [
+            session.get(f"{base_url}/search?q={query}&start={page*15}", timeout=10)
+            for page in range(pages)
+        ]
+        
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        all_music_data = []
+        
+        for response in responses:
+            if isinstance(response, Exception) or not hasattr(response, 'status'):
+                continue
+            
+            if response.status == 200:
                 html = await response.text()
-                data = bs(html, "html.parser")
-                names = data.findAll('a', class_="block")
-                hrefs = [i['href'] for i in names if i['href'].startswith('/get_new?') or i['href'].startswith('/info?id')]
-            for item in names:
-                song_name = "".join(" ".join(item.text.split()).split(", 320Kb/s"))
-                if song_name.endswith(')'):
-                    user_data[user_id]["songs"].append(song_name)
-            for link in hrefs:
-                user_data[user_id]["links"].append(muzmo_baselink+link)
-        except Exception as ex:
-            print(f"[!] Ошибка парсинга: {ex}")
-        if user_data[user_id]["songs"] and user_data[user_id]["links"]:
-            markup = InlineKeyboardMarkup()
-            for index, song in enumerate(user_data[user_id]["songs"]):
-                songname = song.replace(")", "").split('(')[0].strip()
-                button = InlineKeyboardButton(songname, callback_data=f"{user_id}:{index}")
-                markup.add(button)
-                url = url.replace(')','\)' )
-            await message.answer(f"Музыка найдена на сайте [Muzmo]({muzmo_baselink})\.  [На сайт]({url})\.", parse_mode=ParseMode.MARKDOWN_V2, reply_markup=markup)
-            return
-        url = url.replace(')','\)' )
-        await message.answer(f"К сожалению, ничего не найдено\. [Посмотреть на сайте]({ url })\.", parse_mode=ParseMode.MARKDOWN_V2)
+                soup = BeautifulSoup(html, "html.parser")
+                
+                for item in soup.find_all('a', class_="block"):
+                    href = item.get('href', '')
+                    if href.startswith(('/info?id')):   # '/get_new?',  но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
+                        text = item.get_text(strip=True)
+                        if " - " in text and "(" in text:
+                            try:
+                                name = text.split('(')[0].strip()
+                                time = text.split('(')[1].split(',')[0].strip()
+                                all_music_data.append((
+                                    f"{name}({time})",
+                                    f"{base_url}{href}"
+                                ))
+                            except IndexError:
+                                continue
+            
+        return all_music_data
+
+
+#song filter
+async def top_songs(music_data, query, top_count=10):
+    if len(music_data) <= top_count:
+        return music_data
+    
+    query_lower = query.lower()
+    def process_chunk(chunk):
+        chunk_scores = []
+        for song in chunk:
+            song_lower = song[0].lower()
+            
+            # Используем partial_ratio для неполных совпадений
+            similarity = difflib.SequenceMatcher(
+                None, query_lower, song_lower
+            ).ratio()
+            
+            # Дополнительные метрики для точности
+            partial_similarity = difflib.SequenceMatcher(
+                None, query_lower, song_lower
+            ).quick_ratio()
+            
+            bonus = 0
+            if query_lower in song_lower:
+                bonus = 40  # Точное вхождение
+            elif any(word in song_lower for word in query_lower.split()):
+                bonus = 20  # Хотя бы одно слово
+            
+            # total score
+            score = (similarity * 50 + partial_similarity * 30 + bonus)
+            chunk_scores.append((score, song))
+        
+        return chunk_scores
+    
+    # Параллельная обработка
+    chunk_size = max(1, len(music_data) // 4)
+    chunks = [music_data[i:i + chunk_size] for i in range(0, len(music_data), chunk_size)]
+    
+    loop = asyncio.get_event_loop()
+    tasks = [loop.run_in_executor(None, process_chunk, chunk) for chunk in chunks]
+    chunk_results = await asyncio.gather(*tasks)
+    
+    all_scores = []
+    for chunk_scores in chunk_results:
+        all_scores.extend(chunk_scores)
+    
+    all_scores.sort(key=lambda x: x[0], reverse=True)
+    return [song for _, song in all_scores[:top_count]]
 
 # Button handler
 @dp.callback_query_handler(lambda callback: True)
