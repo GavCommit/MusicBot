@@ -222,11 +222,11 @@ async def get_downloadlink(link: str) -> str:
                 async with semaphore, session.get(link) as response:
                     html = await response.text()
                     data = bs(html, 'html.parser')
-                    name = data.findAll('a', class_='block')
+                    name = data.find_all('a', class_='block')
                     if name:
                         href = [i['href'] for i in name if i['href'].startswith('/get/music')][0]
                         if not href:
-                            name = data.findAll('div', class_='mzmlght')[1]
+                            name = data.find_all('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
                         if href:
                             return base_url+href
