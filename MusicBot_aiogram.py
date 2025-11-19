@@ -19,6 +19,8 @@ config.read(config_path)
 
 TOKEN = config.get("Settings", "TOKEN")
 FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # in Mbites
+PAGES_SCANNING = config.getint("Settings", "PAGES_SCANNING")
+SEARCH_RESULTS = config.getint("Settings", "SEARCH_RESULTS")
 base_url = "https://rmr.muzmo.cc"
 
 bot = Bot(token=TOKEN)
@@ -44,9 +46,9 @@ async def handle_text(message: Message):
         await message.answer("Запрос для поиска не менее 3х символов")
         return
 
-    music_data = await get_music(query=query, pages=3) # делаем запросы к сайту (асинхрон, несколько страниц)
+    music_data = await get_music(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту (асинхрон, несколько страниц)
 
-    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=12) # фильтруем результат поиска, находим наибольшее совпадение
+    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=SEARCH_RESULTS) # фильтруем результат поиска, находим наибольшее совпадение
 
     await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered) #отправка клавиатуры с песнями
 
