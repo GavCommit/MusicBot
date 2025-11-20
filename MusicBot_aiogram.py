@@ -5,7 +5,7 @@ import configparser
 import difflib
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, URLInputFile
 from bs4 import BeautifulSoup as bs
 #import logging
 
@@ -194,20 +194,29 @@ async def download(callback, filename: str, link: str):
                     await callback.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.", show_alert=True)
                     return
 
+                performer = filename.split("_-_")[0].strip("_").replace("_", " ")
+                title = filename.split("_-_")[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ")
+                if file_size < 20 * 1024 * 1024:
+                    await bot.send_chat_action(callback.message.chat.id, 'upload_document')
+                    audio_file = URLInputFile(
+                        url=download_url,
+                        filename=filename
+                    )
+                    await callback.message.answer_audio(audio_file, title=title, performer=performer)
+                    return
+
                 await bot.send_chat_action(callback.message.chat.id, "record_voice")
                 with open(filename, 'wb') as f:
                     async for chunk in response.content.iter_chunked(512):
                         f.write(chunk)
 
                 await bot.send_chat_action(callback.message.chat.id, 'upload_document')
-                
-                performer = filename.split("_-_")[0].strip("_").replace("_", " ")
-                title = filename.split("_-_")[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ")
 
                 audio_file = FSInputFile(filename, filename=filename)
                 await callback.message.answer_audio(audio_file, title=title, performer=performer) # title='название', performer='исполнитель' 
 
         os.remove(filename)
+        return
 
     except Exception as ex:
         print(f"[!] (download) Ошибка загрузки: {ex}")
