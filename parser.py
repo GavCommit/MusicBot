@@ -2,9 +2,11 @@
 import aiohttp
 import asyncio
 import difflib
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup as bs
 
-muzmo_baselink = "https://rmr.muzmo.cc"
+
+semaphore = asyncio.Semaphore(10)
+base_url = "https://rmr.muzmo.cc"
 
 
 
@@ -88,6 +90,9 @@ async def get_music(query: str, pages: int = 2) -> list:
 
 
 async def top_songs(music_data, query, top_count=10):
+
+    music_data = list(set(music_data))
+
     if len(music_data) <= top_count:
         return music_data
     
@@ -136,29 +141,68 @@ async def top_songs(music_data, query, top_count=10):
     return [song for _, song in all_scores[:top_count]]
 
 
+async def get_downloadlink(link: str, max_attemps: int = 3) -> str: 
+    async with aiohttp.ClientSession() as session:
+        try:
+            for att in range(max_attemps):    
+                async with semaphore, session.get(link) as response:
+                    html = await response.text()
+                    data = bs(html, 'html.parser')
+                    download_link = data.find("a", href = lambda x: x and x.startswith('/get/music')).get("href")
+                    if download_link:
+                        return base_url+download_link, att
+
+                    #name = data.find_all('a', class_='block')
+                    #if name:
+                    #    href = [i['href'] for i in name if i['href'].startswith('/get/music')][0]
+                    #    if not href:
+                    #        name = data.find_all('div', class_='mzmlght')[1]
+                    #        href = name.find("input", {'name' : "input"}).get("value")
+                    #    if href:
+                    #        return base_url+href, att
+
+        except Exception as ex:
+            print(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
+
+
 def output_print(query, music_data, music_data_filtered):
-    print("Запрос: " + query)
+    print("Запрос: " + query + f"\n\nhttps://rmr.muzmo.cc/search?q={query.replace(' ', '+')}\n\n")
     print(f'{"Фильтровнанные результаты":_^50}')
     for song in music_data_filtered:
-        print(song[0])
+        print(song)
 
     print("\n\n"+ "_"*50)
     print("Всего результатов: "+ str(len(music_data_filtered))+ "\n\n")
 
 
     print(f'{"Обычные результаты":_^50}')
-    for song in music_data[:len(music_data_filtered)]:
-        print(song[0])
+    for song in music_data:
+        print(song)
 
 # 
+
 async def main():
-    query = "Игорь Тальков - я вернусь"
+    query = "Up from the bottom"
 
-    music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
+    #music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
 
-    music_data_filtered = await top_songs(music_data, query) # фильтруем результат поиска, находим наибольшее совпадение
+    #music_data_filtered = await top_songs(music_data, query) # фильтруем результат поиска, находим наибольшее совпадение
 
-    output_print(query, music_data, music_data_filtered)
+    #output_print(query, music_data, music_data_filtered)
+
+
+    import time
+    link = "https://rmr.muzmo.cc/info?id=79702189"
+
+    for _ in range(20):
+        time_start = time.perf_counter() # start ______________
+
+
+        _, dowmload_link = await get_downloadlink(link = link)
+
+
+        time_end = round(time.perf_counter() - time_start, 2) # end ___________
+        print(str(dowmload_link)  +" " +  str(time_end))
 
 if __name__ == "__main__":
     asyncio.run(main())
