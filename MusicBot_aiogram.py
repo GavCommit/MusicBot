@@ -190,13 +190,14 @@ async def download(callback, filename: str, link: str):
             async with semaphore, session.get(download_url) as response:
                 file_size = int(response.headers.get("Content-Length", 0))
 
-                if file_size > FILE_SIZE_LIMIT:
+                if file_size > FILE_SIZE_LIMIT:  # если больше N Мб отменяет скачивание 
                     await callback.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.", show_alert=True)
                     return
 
                 performer = filename.split("_-_")[0].strip("_").replace("_", " ")
                 title = filename.split("_-_")[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ")
-                if file_size < 20 * 1024 * 1024:
+
+                if file_size < 20 * 1024 * 1024: # если меньше 20Мб отправляет напрямую 
                     await bot.send_chat_action(callback.message.chat.id, 'upload_document')
                     audio_file = URLInputFile(
                         url=download_url,
@@ -205,9 +206,9 @@ async def download(callback, filename: str, link: str):
                     await callback.message.answer_audio(audio_file, title=title, performer=performer)
                     return
 
-                await bot.send_chat_action(callback.message.chat.id, "record_voice")
+                await bot.send_chat_action(callback.message.chat.id, "record_voice")  # если больше 20Мб скачивет, а потом отправляет 
                 with open(filename, 'wb') as f:
-                    async for chunk in response.content.iter_chunked(512):
+                    async for chunk in response.content.iter_chunked(2048):
                         f.write(chunk)
 
                 await bot.send_chat_action(callback.message.chat.id, 'upload_document')
@@ -252,5 +253,4 @@ async def main():
 
 # Bot startup
 if __name__ == "__main__":
-    print("Bot starts polling...")
     asyncio.run(main())
