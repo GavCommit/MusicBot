@@ -46,15 +46,17 @@ async def handle_text(message: Message):
         await message.answer("Запрос для поиска не менее 3х символов")
         return
 
-    music_data = await get_music(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту (асинхрон, несколько страниц)
+    music_data = await get_music_muzmo(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту (асинхрон, несколько страниц)
 
     music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=SEARCH_RESULTS) # фильтруем результат поиска, находим наибольшее совпадение
 
-    await send_downloading_kb(message=message, url = f"/search?q={query}", music_data_filtered=music_data_filtered) #отправка клавиатуры с песнями
+    site = "a"# a-muzmo b-hitmo 
+    songs_data  = music_data_filtered.insert(0, site)
+    await send_downloading_kb(message=message, url = f"/search?q={query}", music_data=music_data_filtered) #отправка клавиатуры с песнями
 
 
 # Async music parser
-async def get_music(query: str, pages: int = 3) -> list:
+async def get_music_muzmo(query: str, pages: int = 3) -> list:
     async with aiohttp.ClientSession() as session:
         tasks = [
             session.get(f"{base_url}/search?q={query}&start={page*15}", timeout=10)
@@ -137,29 +139,35 @@ async def top_songs(music_data, query, top_count=10):
     return [song for _, song in all_scores[:top_count]]
 
 
-async def send_downloading_kb(message, url:str = base_url, music_data_filtered: list = []):
-    if not music_data_filtered: # если musiс_data пустая
+async def send_downloading_kb(message, url:str = base_url, music_data: list = []):
+    if not music_data: # если musiс_data пустая
         await message.answer(f'К сожалению, ничего не найдено. <a href="{base_url+url}">Посмотреть на сайте</a>.', parse_mode="HTML")
         return 
 
     buttons = []
-    for song, id in music_data_filtered:
-        buttons.append(
-            [InlineKeyboardButton(
-            text=song,
-            callback_data=id
-            )]
+    if music_data[0] == 'a': #muzmo
+        for song, id in music_data[1:]:
+            buttons.append(
+                [InlineKeyboardButton(
+                text=song,
+                callback_data=id
+                )]
+                )
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        await message.answer(
+            f'Музыка найдена на сайте <a href="{base_url}">Muzmo</a>.  <a href="{base_url+url}">На сайт</a>.',
+            parse_mode="HTML",
+            reply_markup=kb
             )
-    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer(
-        f'Музыка найдена на сайте <a href="{base_url}">Muzmo</a>.  <a href="{base_url+url}">На сайт</a>.',
-        parse_mode="HTML",
-        reply_markup=kb
-        )
+
+    
 
 # Button handler
 @dp.callback_query()
 async def download_song(callback: CallbackQuery):
+
+
+
     id = callback.data
     link = base_url + "/info?id=" + id
 
