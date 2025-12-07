@@ -143,7 +143,9 @@ async def search_music_hitmo(query: str, limit: int = 40) -> list:
                         
                         duration_elem = song.select_one('.track__fulltime')
                         duration = duration_elem.get_text(strip=True) if duration_elem else "00:00"
-                        
+                        if len(download_url) >= 64: # слишком большие ссылки для callback`а
+                            continue
+
                         if artist and title and download_url:
                             song_name = f'{artist} - {title}({duration})'
                             songs_data.append((song_name, download_url))
@@ -265,7 +267,7 @@ async def download_song(callback: CallbackQuery):
             if not download_url:
                 await callback.answer("Не удалось получить ссылку на скачивание.", show_alert=True)
                 return
-                
+
     elif data[0] == sites["hitmo"]["code_letter"]: # Обработка кнопок от hitmo
         href = data[1:]
         download_url = sites["hitmo"]["base_download_url"]+href
@@ -279,7 +281,6 @@ async def download_song(callback: CallbackQuery):
         pattern = r'\s*\(\d+:\d+\)\s*$'
         song_without_timer = re.sub(pattern, "", song).strip()
         filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3" 
-        print(filename)
         
     await download(callback=callback, filename=filename, download_url=download_url)
     await callback.answer()
