@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, URLInputFile
 from bs4 import BeautifulSoup as bs
-import logging
+#import logging
 
 # Import config
 config_path = "MusicBot.conf"  
@@ -37,8 +37,8 @@ sites = {
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
+#logger = logging.getLogger(__name__)
 
 semaphore = asyncio.Semaphore(10)
 
@@ -58,10 +58,11 @@ async def handle_text(message: Message):
         return
 
     site, music_data = await get_music(query=query) # парсит пока не найдет
-
-    music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=SEARCH_RESULTS) # фильтруем результат поиска, находим наибольшее совпадение
-    songs_data  = music_data_filtered.insert(0, site) # добавляем флаг сайта к списку песен
-
+    if music_data:
+        music_data_filtered = await top_songs(music_data=music_data, query=query, top_count=SEARCH_RESULTS) # фильтруем результат поиска, находим наибольшее совпадение
+        music_data_filtered.insert(0, site) # добавляем флаг сайта к списку песен
+    else:
+        music_data_filtered = []
     await send_downloading_kb(message=message, url = f"/search?q={query}", music_data=music_data_filtered) #отправка клавиатуры с песнями
 
 # Ищет на 2 сайтах и возвращает список песен  (Автор - Песня(время:время), ссылка)
@@ -70,10 +71,9 @@ async def get_music(query:str):
     if music_data:
         return sites['hitmo']['code_letter'], music_data
     
+    music_data = await search_music_muzmo(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту muzmo (асинхрон, несколько страниц)
     if music_data:
         return sites['muzmo']['code_letter'], music_data
-    music_data = await search_music_muzmo(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту muzmo (асинхрон, несколько страниц)
-
     return '', []
     
 # Async music parser muzmo
@@ -161,6 +161,9 @@ async def search_music_hitmo(query: str, limit: int = 40) -> list:
 
 #song filter
 async def top_songs(music_data, query, top_count=10):
+    if not music_data:
+        return []
+    
     if len(music_data) <= top_count:
         return music_data
     
@@ -228,6 +231,7 @@ async def send_downloading_kb(message, url:str, music_data: list = []):
             parse_mode="HTML",
             reply_markup=kb
             )
+
     elif music_data[0] == sites["hitmo"]['code_letter']: #hitmo
         for song, href in music_data[1:]:
             buttons.append(
@@ -248,7 +252,6 @@ async def send_downloading_kb(message, url:str, music_data: list = []):
 @dp.callback_query()
 async def download_song(callback: CallbackQuery):
     data = callback.data
-
     if data[0] == sites["muzmo"]["code_letter"]: # Обработка кнопок от muzmo
         id = data[1:]
         link = sites["muzmo"]["base_url"] + "/info?id=" + id
@@ -256,8 +259,7 @@ async def download_song(callback: CallbackQuery):
         for row in callback.message.reply_markup.inline_keyboard:
             for button in row:
                 if button.callback_data == data:
-                    song = button.text   
-
+                    song = button.text
         pattern = r'\s*\(\d+:\d+\)\s*$'
         song_without_timer = re.sub(pattern, "", song).strip()
         filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3" 
@@ -276,8 +278,7 @@ async def download_song(callback: CallbackQuery):
         for row in callback.message.reply_markup.inline_keyboard:
             for button in row:
                 if button.callback_data == data:
-                    song = button.text   
-
+                    song = button.text
         pattern = r'\s*\(\d+:\d+\)\s*$'
         song_without_timer = re.sub(pattern, "", song).strip()
         filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3" 
@@ -296,6 +297,7 @@ async def download(callback, filename: str, download_url: str):
                     await callback.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.", show_alert=True)
                     return
 
+                await callback.answer()# проблема долгого ответа
                 performer = filename.split("_-_")[0].strip("_").replace("_", " ")
                 title = filename.split("_-_")[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ")
                 if file_size < 20 * 1024 * 1024: # если меньше 20Мб отправляет напрямую 
