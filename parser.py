@@ -48,47 +48,6 @@ base_url = "https://rmr.muzmo.cc"
 #    return music_data
 
 
-
-
-
-async def get_music(query: str, pages: int = 2) -> list:
-    base_url = "https://rmr.muzmo.cc"
-    
-    async with aiohttp.ClientSession() as session:
-        tasks = [
-            session.get(f"{base_url}/search?q={query}&start={page*15}", timeout=10)
-            for page in range(pages)
-        ]
-        
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
-        all_music_data = []
-        
-        for response in responses:
-            if isinstance(response, Exception) or not hasattr(response, 'status'):
-                continue
-            
-            if response.status == 200:
-                html = await response.text()
-                soup = BeautifulSoup(html, "html.parser")
-                
-                for item in soup.find_all('a', class_="block"):
-                    href = item.get('href', '')
-                    if href.startswith(( '/info?id')):   # '/get_new?',  но не всегда скачивается
-                        text = item.get_text(strip=True)
-                        if " - " in text and "(" in text:
-                            try:
-                                name = text.split('(')[0].strip()
-                                time = text.split('(')[1].split(',')[0].strip()
-                                all_music_data.append((
-                                    f"{name}({time})",
-                                    f"{base_url}{href}"
-                                ))
-                            except IndexError:
-                                continue
-            
-        return all_music_data
-
-
 async def top_songs(music_data, query, top_count=10):
 
     music_data = list(set(music_data))
@@ -180,31 +139,118 @@ def output_print(query, music_data, music_data_filtered):
         print(song)
 
 # 
+ 
+
+ 
+sites = {
+    "hitmo": {
+        "code_letter": "b",
+        "base_url": "https://rus.hitmotop.com/",
+        "base_download_url": "https://rus.hitmotop.com/get/music/"
+    },
+    "muzmo":{
+    "code_letter": "a",
+        "base_url": "https://rmr.muzmo.cc",
+        "base_download_url": False
+    }
+}
+
+
+import aiohttp
+import json
+from bs4 import BeautifulSoup as bs
+from typing import List, Tuple
+import asyncio
+
+async def search_music_hitmo(query: str, limit: int = 40):
+    query = query.strip().replace(" ", '-')
+    url = f"https://rus.hitmotop.com/search?q={query}"
+    
+    songs_data = []
+    
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status != 200:
+                    return []
+                
+                html = await response.text()
+                soup = bs(html, "html.parser")
+
+                for song in soup.find_all('li', class_="tracks__item"):
+                    if len(songs_data) >= limit:
+                        break
+                    
+                    try:
+                        data = json.loads(song['data-musmeta'])
+                        
+                        title = data.get("title", "").strip()
+                        artist = data.get("artist", "").strip()
+                        
+                        download_btn = song.select_one('.track__download-btn[href*=".mp3"]')
+                        download_url = download_btn['href'][35:] if download_btn else ""
+                        
+                        duration_elem = song.select_one('.track__fulltime')
+                        duration = duration_elem.get_text(strip=True) if duration_elem else "00:00"
+                        
+                        if artist and title and download_url:
+                            song_name = f'{artist} - {title}({duration})'
+                            songs_data.append((song_name, download_url))
+                                
+                    except (KeyError, json.JSONDecodeError, AttributeError):
+                        continue
+                        
+        except Exception as e:
+            print(f"Ошибка при запросе к hitmo: {e}")
+            return []
+    
+    return songs_data
+
+# Async music parser
+async def search_music_muzmo(query: str, pages: int = 3) -> list:
+    async with aiohttp.ClientSession() as session:
+        tasks = [
+            session.get(f"{base_url}/search?q={query}&start={page*15}", timeout=10)
+            for page in range(pages)
+        ]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        all_music_data = []
+        
+        for response in responses:
+            if isinstance(response, Exception) or not hasattr(response, 'status'):
+                continue
+            
+            if response.status == 200:
+                html = await response.text()
+                soup = bs(html, "html.parser")
+                
+                for item in soup.find_all('a', class_="block"):
+                    href = item.get('href', '')
+                    if href.startswith(('/info?id')):   # '/get_new?',  но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
+                        text = item.get_text(strip=True)
+                        if " - " in text and "(" in text:
+                            try:
+                                name = text.split('(')[0].strip()
+                                time = text.split('(')[1].split(',')[0].strip()
+                                all_music_data.append((
+                                    f"{name}({time})",
+                                    f"{href[9:]}"
+                                ))
+                            except IndexError:
+                                continue
+            
+        return all_music_data
+
 
 async def main():
-    query = "Up from the bottom"
+    query = "Ария"
+    data = await search_music_hitmo(query=query)
+    for index, i in enumerate(data):
+        print(index, i)
+    data = await search_music_muzmo(query=query)
+    for index, i in enumerate(data):
+        print(index, i)
 
-    #music_data = await get_music(query=query, pages=4) # делаем запросы к сайту (асинхрон, несколько страниц)
-
-    #music_data_filtered = await top_songs(music_data, query) # фильтруем результат поиска, находим наибольшее совпадение
-
-    #output_print(query, music_data, music_data_filtered)
-
-
-    import time
-    link = "https://rmr.muzmo.cc/info?id=79702189"
-
-    for _ in range(20):
-        time_start = time.perf_counter() # start ______________
-
-
-        _, dowmload_link = await get_downloadlink(link = link)
-
-
-        time_end = round(time.perf_counter() - time_start, 2) # end ___________
-        print(str(dowmload_link)  +" " +  str(time_end))
 
 if __name__ == "__main__":
     asyncio.run(main())
-
- 
