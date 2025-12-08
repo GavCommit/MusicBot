@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, URLInputFile
 from bs4 import BeautifulSoup as bs
-#import logging
+import logging
 
 # Import config
 config_path = "MusicBot.conf"  
@@ -37,8 +37,8 @@ sites = {
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-#logging.basicConfig(level=logging.INFO)
-#logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 semaphore = asyncio.Semaphore(10)
 
@@ -73,6 +73,7 @@ async def get_music(query:str):
     
     music_data = await search_music_muzmo(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту muzmo (асинхрон, несколько страниц)
     if music_data:
+        print(query)
         return sites['muzmo']['code_letter'], music_data
     return '', []
     
