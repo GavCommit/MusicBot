@@ -50,7 +50,7 @@ async def start(message: Message):
     await message.answer("Введите название песни или исполнителя:")
 
 # Message handler (music search)
-@dp.message()
+@dp.message(F.text)
 async def handle_text(message: Message):
     query = message.text
     if len(query) < 3:
