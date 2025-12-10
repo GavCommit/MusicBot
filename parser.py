@@ -100,7 +100,7 @@ async def top_songs(music_data, query, top_count=10):
     return [song for _, song in all_scores[:top_count]]
 
 
-async def get_downloadlink(link: str, max_attemps: int = 3) -> str: 
+async def get_downloadlink_old(link: str, max_attemps: int = 3) -> str: 
     async with aiohttp.ClientSession() as session:
         try:
             for att in range(max_attemps):    
@@ -123,6 +123,27 @@ async def get_downloadlink(link: str, max_attemps: int = 3) -> str:
         except Exception as ex:
             print(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
 
+async def get_downloadlink(link: str) -> str: 
+    async with aiohttp.ClientSession() as session:
+        #try:
+            href = None
+            while not href:    
+                async with semaphore, session.get(link) as response:
+                    html = await response.text()
+                    data = bs(html, 'html.parser')
+                    name = data.find_all('a', class_='block')
+                    if name:
+                        href = [i['href'] for i in name if i['href'].startswith('/get/music')]
+                        if not href:
+                            print(data)
+                            name = data.find_all('div', class_='mzmlght')[1]
+                            href = name.find("input", {'name' : "input"}).get("value")
+                        if href:
+                            return sites["muzmo"]["base_url"]+href[0]
+        #except Exception as ex:
+        #    print(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
+
+    return None
 
 def output_print(query, music_data, music_data_filtered):
     print("Запрос: " + query + f"\n\nhttps://rmr.muzmo.cc/search?q={query.replace(' ', '+')}\n\n")
@@ -223,10 +244,9 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
             if response.status == 200:
                 html = await response.text()
                 soup = bs(html, "html.parser")
-                
                 for item in soup.find_all('a', class_="block"):
                     href = item.get('href', '')
-                    if href.startswith(('/info?id')):   # '/get_new?',  но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
+                    if href.startswith(('/get_new?','/info?id')):   #   но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
                         text = item.get_text(strip=True)
                         if " - " in text and "(" in text:
                             try:
@@ -234,7 +254,7 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
                                 time = text.split('(')[1].split(',')[0].strip()
                                 all_music_data.append((
                                     f"{name}({time})",
-                                    f"{href[9:]}"
+                                    f"{'A::'+href[9:] if href.startswith('/info?id') else 'B::'+href[13:]}"
                                 ))
                             except IndexError:
                                 continue
@@ -243,13 +263,18 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
 
 
 async def main():
-    query = "Ария"
-    data = await search_music_hitmo(query=query)
-    for index, i in enumerate(data):
-        print(index, i)
+    query = "Русское поле экспериментов"
+    #data = await search_music_hitmo(query=query)
+    #for index, i in enumerate(data):
+    #    print(index, i)
     data = await search_music_muzmo(query=query)
+    #print(data)
     for index, i in enumerate(data):
-        print(index, i)
+        #print(index, i)
+        url = sites['muzmo']['base_url']+"/get_new?get="+i[1].strip("B::")
+        link = await get_downloadlink(url)
+        print(link)
+        
 
 
 if __name__ == "__main__":

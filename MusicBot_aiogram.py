@@ -35,7 +35,6 @@ sites = {
     }
 }
 
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
@@ -105,7 +104,7 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
                 
                 for item in soup.find_all('a', class_="block"):
                     href = item.get('href', '')
-                    if href.startswith(('/info?id')):   # '/get_new?',  но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
+                    if href.startswith(('/get_new?','/info?id')):   #   но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
                         text = item.get_text(strip=True)
                         if " - " in text and "(" in text:
                             try:
@@ -113,7 +112,8 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
                                 time = text.split('(')[1].split(',')[0].strip()
                                 all_music_data.append((
                                     f"{name}({time})",
-                                    f"{href[9:]}" # {base_url} получаем просто id песни
+                                    #f"{href[9:]}" # {base_url} получаем просто id песни
+                                    f"{'A::'+href[9:] if href.startswith('/info?id') else 'B::'+href[13:]}"
                                 ))
                             except IndexError:
                                 continue
@@ -262,7 +262,10 @@ async def download_song(callback: CallbackQuery):
     data = callback.data
     if data[0] == sites["muzmo"]["code_letter"]: # Обработка кнопок от muzmo
         id = data[1:]
-        link = sites["muzmo"]["base_url"] + "/info?id=" + id
+        if id.startswith("A::"):
+            link = sites["muzmo"]["base_url"] + "/info?id=" + id[3:]
+        else:
+            link = sites['muzmo']['base_url'] + "/get_new?get=" + id[3:]
         song = "не_найдена"
         for row in callback.message.reply_markup.inline_keyboard:
             for button in row:
@@ -345,12 +348,12 @@ async def get_downloadlink(link: str) -> str:
                     data = bs(html, 'html.parser')
                     name = data.find_all('a', class_='block')
                     if name:
-                        href = [i['href'] for i in name if i['href'].startswith('/get/music')][0]
+                        href = [i['href'] for i in name if i['href'].startswith('/get/music')]
                         if not href:
                             name = data.find_all('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
                         if href:
-                            return sites["muzmo"]["base_url"]+href
+                            return sites["muzmo"]["base_url"]+href[0]
         except Exception as ex:
             print(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
 
