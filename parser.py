@@ -126,6 +126,7 @@ async def get_downloadlink_old(link: str, max_attemps: int = 3) -> str:
 async def get_downloadlink(link: str) -> str: 
     async with aiohttp.ClientSession() as session:
         #try:
+            print(link)
             href = None
             while not href:    
                 async with semaphore, session.get(link) as response:
@@ -135,7 +136,8 @@ async def get_downloadlink(link: str) -> str:
                     if name:
                         href = [i['href'] for i in name if i['href'].startswith('/get/music')]
                         if not href:
-                            print(data)
+                            with open("data.html", "w") as f:
+                                f.write(str(data))
                             name = data.find_all('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
                         if href:
@@ -246,7 +248,7 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
                 soup = bs(html, "html.parser")
                 for item in soup.find_all('a', class_="block"):
                     href = item.get('href', '')
-                    if href.startswith(('/get_new?','/info?id')):   #   но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
+                    if href.startswith(('/get_new?')):   #  ,'/info?id' но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
                         text = item.get_text(strip=True)
                         if " - " in text and "(" in text:
                             try:
@@ -260,8 +262,7 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
                                 continue
             
         return all_music_data
-
-
+        
 async def main():
     query = "Русское поле экспериментов"
     #data = await search_music_hitmo(query=query)

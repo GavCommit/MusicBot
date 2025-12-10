@@ -22,6 +22,7 @@ FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # i
 PAGES_SCANNING = config.getint("Settings", "PAGES_SCANNING")
 SEARCH_RESULTS = config.getint("Settings", "SEARCH_RESULTS")
 SITE_PRIORITY = config.get("Settings", "SITE_PRIORITY", fallback="muzmo").split(",")
+MIN_RESULTS = config.getint("Settings", "MIN_RESULTS")
 sites = {
     "hitmo": {
         "code_letter": "b",
@@ -67,6 +68,10 @@ async def handle_text(message: Message):
 
 # Ищет на 2 сайтах и возвращает список песен  (Автор - Песня(время:время), ссылка)
 async def get_music(query:str):
+    best_data = []
+    best_site =""
+    best_count = 0
+
     for site_name in SITE_PRIORITY:
         site_name = site_name.strip()
         if site_name not in sites:
@@ -77,11 +82,21 @@ async def get_music(query:str):
             music_data = await search_music_hitmo(query=query) # делаем запросы к сайту hitmo
         else:
             continue # не найден 
-
+        
         if music_data:
-            return sites.get(site_name)["code_letter"], music_data
-    
-    return '', []
+            current_count = len(music_data)
+            if current_count > best_count:
+                best_data = music_data
+                best_site =  sites.get(site_name)["code_letter"]
+                best_count = current_count
+
+                if current_count >= MIN_RESULTS:
+                    break
+
+    if best_data:
+        return sites.get(site_name)["code_letter"], music_data
+    else:
+        return '', []
     
 # Async music parser muzmo
 async def search_music_muzmo(query: str, pages: int = 3) -> list:
