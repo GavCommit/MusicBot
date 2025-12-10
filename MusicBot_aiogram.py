@@ -348,12 +348,12 @@ async def get_downloadlink(link: str) -> str:
                     data = bs(html, 'html.parser')
                     name = data.find_all('a', class_='block')
                     if name:
-                        href = [i['href'] for i in name if i['href'].startswith('/get/music')]
+                        href = [i['href'] for i in name if i['href'].startswith('/get/music')][0]
                         if not href:
                             name = data.find_all('div', class_='mzmlght')[1]
                             href = name.find("input", {'name' : "input"}).get("value")
                         if href:
-                            return sites["muzmo"]["base_url"]+href[0]
+                            return sites["muzmo"]["base_url"]+href
         except Exception as ex:
             print(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
 
