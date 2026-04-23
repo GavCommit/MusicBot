@@ -19,12 +19,18 @@ if not os.path.exists(config_path):
 config = configparser.ConfigParser()
 config.read(config_path)
 
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 TOKEN = config.get("Settings", "TOKEN")
 FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # in Mbites
 PAGES_SCANNING = config.getint("Settings", "PAGES_SCANNING")
 SEARCH_RESULTS = config.getint("Settings", "SEARCH_RESULTS")
 SITE_PRIORITY = config.get("Settings", "SITE_PRIORITY", fallback="muzmo").split(",")
 MIN_RESULTS = config.getint("Settings", "MIN_RESULTS")
+DISABLE_SSL_CHECK = config.getint("Settings", "DISABLE_SSL_CHECK", fallback=0) == 1
+
 sites = {
     "hitmo": {
         "code_letter": "b",
@@ -38,18 +44,16 @@ sites = {
     }
 }
 # disable ssl check for my fdns
-# Настройка SSL на основе конфига
-ssl_context = False
-if config.getint("Settings", "DISABLE_SSL_CHECK", fallback=0) == 1:
+ssl_context = None
+if DISABLE_SSL_CHECK:
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
+    logger.info("SSL verification disabled")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+dp = Dispatcher()
 
 semaphore = asyncio.Semaphore(10)
-dp = Dispatcher()
 
 # /start
 @dp.message(F.chat.type == "private", Command(commands=['start','старт','отвинта']))
@@ -384,17 +388,15 @@ async def get_downloadlink(link: str) -> str:
 
 
 async def main():
-    if ssl_context:
-        session = AiohttpSession()
-        session._session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(ssl=ssl_context)
-        )
-    else:
-        session = AiohttpSession()
+    connector = aiohttp.TCPConnector(ssl=ssl_context) if ssl_context else aiohttp.TCPConnector()
+
+    client_session = aiohttp.ClientSession(connector=connector)
+    session = AiohttpSession()
+    session._session = client_session 
 
     bot = Bot(token=TOKEN, session=session)
-    
     try:
+        logger.info("Бот запущен")
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
