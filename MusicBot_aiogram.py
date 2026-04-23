@@ -49,6 +49,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 semaphore = asyncio.Semaphore(10)
+dp = Dispatcher()
 
 # /start
 @dp.message(F.chat.type == "private", Command(commands=['start','старт','отвинта']))
@@ -381,19 +382,22 @@ async def get_downloadlink(link: str) -> str:
 
     return None
 
-async def main():
 
+async def main():
     if ssl_context:
-        session = AiohttpSession(ssl_context=ssl_context)
+        session = AiohttpSession()
+        session._session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ssl=ssl_context)
+        )
     else:
         session = AiohttpSession()
-    
+
     bot = Bot(token=TOKEN, session=session)
-    dp = Dispatcher()
+    
     try:
         await dp.start_polling(bot)
     finally:
-        await session.close()
+        await bot.session.close()
 
 
 # Bot startup
