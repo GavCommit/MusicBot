@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup as bs
 import logging
 
 # Import config
-config_path = "MusicBot.conf"  
+config_path = "MusicBot.conf"
 
 if not os.path.exists(config_path):
     raise FileNotFoundError(f"Config file not found at {config_path}")
@@ -23,11 +23,16 @@ PAGES_SCANNING = config.getint("Settings", "PAGES_SCANNING")
 SEARCH_RESULTS = config.getint("Settings", "SEARCH_RESULTS")
 SITE_PRIORITY = config.get("Settings", "SITE_PRIORITY", fallback="muzmo").split(",")
 MIN_RESULTS = config.getint("Settings", "MIN_RESULTS")
+PROXY_URL = config.get("Settings", "PROXY_URL", fallback=None)
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 sites = {
     "hitmo": {
         "code_letter": "b",
-        "base_url": "https://rus.hitmotop.com",
-        "base_download_url": "https://rus.hitmotop.com/get/music/"
+        "base_url": "https://rus.hitmoz.org",
+        "base_download_url": "https://rus.hitmoz.org/get/music/"
     },
     "muzmo":{
     "code_letter": "a",
@@ -36,10 +41,16 @@ sites = {
     }
 }
 
-bot = Bot(token=TOKEN)
+bot = 0
+
+if PROXY_URL:
+    from aiogram.client.session.aiohttp import AiohttpSession
+    session = AiohttpSession(proxy=PROXY_URL)
+    bot = Bot(token=TOKEN, session=session)
+    logger.info(f"Starting with proxy: {PROXY_URL}")
+else:
+    bot = Bot(token=TOKEN)
 dp = Dispatcher()
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 semaphore = asyncio.Semaphore(10)
 
@@ -74,15 +85,14 @@ async def get_music(query:str):
 
     for site_name in SITE_PRIORITY:
         site_name = site_name.strip()
-        if site_name not in sites:
-            continue
         if site_name == "muzmo":
             music_data = await search_music_muzmo(query=query, pages=PAGES_SCANNING) # делаем запросы к сайту muzmo (асинхрон, несколько страниц)
         elif site_name == "hitmo":
             music_data = await search_music_hitmo(query=query) # делаем запросы к сайту hitmo
         else:
-            continue # не найден 
-        
+            logger.error("Site for serching not in available sites list(muzmo, hitmo)")
+            continue # не найден
+
         if music_data:
             current_count = len(music_data)
             if current_count > best_count:
@@ -97,7 +107,8 @@ async def get_music(query:str):
         return sites.get(site_name)["code_letter"], music_data
     else:
         return '', []
-    
+
+
 # Async music parser muzmo
 async def search_music_muzmo(query: str, pages: int = 3) -> list:
     query = query.strip().replace(" ", "+")
@@ -108,15 +119,15 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
         ]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
         all_music_data = []
-        
+
         for response in responses:
             if isinstance(response, Exception) or not hasattr(response, 'status'):
                 continue
-            
+
             if response.status == 200:
                 html = await response.text()
                 soup = bs(html, "html.parser")
-                
+
                 for item in soup.find_all('a', class_="block"):
                     href = item.get('href', '')
                     if href.startswith(('/get_new?','/info?id')):   #   но не всегда скачивается  НЕ ДОБАВЛЯТЬ СЛОМАЕТ CALLBACK
@@ -132,38 +143,39 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
                                 ))
                             except IndexError:
                                 continue
-            
+
         return all_music_data
+
 
 #Async music parser hitmo
 async def search_music_hitmo(query: str, limit: int = 40) -> list:
     query = query.strip().replace(" ", '-')
     url = f"https://rus.hitmotop.com/search?q={query}"
-    
+
     songs_data = []
-    
+
     async with aiohttp.ClientSession() as session:
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status != 200:
                     return []
-                
+
                 html = await response.text()
                 soup = bs(html, "html.parser")
 
                 for song in soup.find_all('li', class_="tracks__item"):
                     if len(songs_data) >= limit:
                         break
-                    
+
                     try:
                         data = json.loads(song['data-musmeta'])
-                        
+
                         title = data.get("title", "").strip()
                         artist = data.get("artist", "").strip()
-                        
+
                         download_btn = song.select_one('.track__download-btn[href*=".mp3"]')
-                        download_url = download_btn['href'][35:] if download_btn else ""
-                        
+                        download_url = download_btn['href'][11:] if download_btn else ""
+
                         duration_elem = song.select_one('.track__fulltime')
                         duration = duration_elem.get_text(strip=True) if duration_elem else "00:00"
                         if len(download_url) >= 64: # слишком большие ссылки для callback`а
@@ -172,64 +184,64 @@ async def search_music_hitmo(query: str, limit: int = 40) -> list:
                         if artist and title and download_url:
                             song_name = f'{artist} - {title}({duration})'
                             songs_data.append((song_name, download_url))
-                                
+
                     except (KeyError, json.JSONDecodeError, AttributeError):
                         continue
-                        
+
         except Exception as e:
-            print(f"Ошибка при запросе к hitmo: {e}")
+            logger.info(f"Ошибка при запросе к hitmo: {e}")
             return []
-    
+
     return songs_data
 
 #song filter
-async def top_songs(music_data, query, top_count=10):
+async def top_songs(music_data, query: str, top_count=10):
     if not music_data:
         return []
-    
+
     if len(music_data) <= top_count:
         return music_data
-    
+
     query_lower = query.lower()
     def process_chunk(chunk):
         chunk_scores = []
         for song in chunk:
             song_lower = song[0].lower()
-            
-            # Используем partial_ratio для неполных совпадений
+
+            # используем partial_ratio для неполных совпадений
             similarity = difflib.SequenceMatcher(
                 None, query_lower, song_lower
             ).ratio()
-            
-            # Дополнительные метрики для точности
+
+            # дополнительные метрики для точности
             partial_similarity = difflib.SequenceMatcher(
                 None, query_lower, song_lower
             ).quick_ratio()
-            
+
             bonus = 0
             if query_lower in song_lower:
-                bonus = 40  # Точное вхождение
+                bonus = 40  # точное вхождение
             elif any(word in song_lower for word in query_lower.split()):
-                bonus = 20  # Хотя бы одно слово
-            
+                bonus = 20  # хотя бы одно слово
+
             # total score
             score = (similarity * 50 + partial_similarity * 30 + bonus)
             chunk_scores.append((score, song))
-        
+
         return chunk_scores
-    
-    # Параллельная обработка
+
+    # параллельная обработка
     chunk_size = max(1, len(music_data) // 4)
     chunks = [music_data[i:i + chunk_size] for i in range(0, len(music_data), chunk_size)]
-    
+
     loop = asyncio.get_event_loop()
     tasks = [loop.run_in_executor(None, process_chunk, chunk) for chunk in chunks]
     chunk_results = await asyncio.gather(*tasks)
-    
+
     all_scores = []
     for chunk_scores in chunk_results:
         all_scores.extend(chunk_scores)
-    
+
     all_scores.sort(key=lambda x: x[0], reverse=True)
     return [song for _, song in all_scores[:top_count]]
 
@@ -237,7 +249,7 @@ async def top_songs(music_data, query, top_count=10):
 async def send_downloading_kb(message, url:str, music_data: list = []):
     if not music_data: # если musiс_data пустая
         await message.answer(f'К сожалению, ничего не найдено. <a href="{sites["muzmo"]["base_url"]}">Посмотреть на сайте</a>.', parse_mode="HTML")
-        return 
+        return
 
     buttons = []
     if music_data[0] == sites["muzmo"]['code_letter']: #muzmo
@@ -270,7 +282,7 @@ async def send_downloading_kb(message, url:str, music_data: list = []):
             reply_markup=kb
             )
 
-    
+
 # Button handler
 @dp.callback_query()
 async def download_song(callback: CallbackQuery):
@@ -288,7 +300,7 @@ async def download_song(callback: CallbackQuery):
                     song = button.text
         pattern = r'\s*\(\d+:\d+\)\s*$'
         song_without_timer = re.sub(pattern, "", song).strip()
-        filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3" 
+        filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3"
         download_url = await get_downloadlink(link)
         if not download_url:
             download_url = await get_downloadlink(link)
@@ -307,57 +319,85 @@ async def download_song(callback: CallbackQuery):
                     song = button.text
         pattern = r'\s*\(\d+:\d+\)\s*$'
         song_without_timer = re.sub(pattern, "", song).strip()
-        filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3" 
-        
+        filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3"
+
     await download(callback=callback, filename=filename, download_url=download_url)
     await callback.answer()
+
 
 # Downloading
 async def download(callback, filename: str, download_url: str):
     try:
         async with aiohttp.ClientSession() as session:
-            async with semaphore, session.get(download_url) as response:
+            async with semaphore, session.get(download_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 file_size = int(response.headers.get("Content-Length", 0))
 
-                if file_size > FILE_SIZE_LIMIT:  # если больше N Мб отменяет скачивание 
-                    await callback.answer(f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.", show_alert=True)
-                    return
+        if file_size > FILE_SIZE_LIMIT:  
+            await callback.answer(
+                f"Файл слишком большой ({file_size / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB.", 
+                show_alert=True
+            )
+            return
+            
+        await callback.answer()
 
-                await callback.answer()# проблема долгого ответа
-                performer = filename.split("_-_")[0].strip("_").replace("_", " ")
-                title = filename.split("_-_")[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ")
-                if file_size < 20 * 1024 * 1024: # если меньше 20Мб отправляет напрямую 
-                    await bot.send_chat_action(callback.message.chat.id, 'upload_document')
-                    audio_file = URLInputFile(
-                        url=download_url,
-                        filename=filename
-                    )
-                    await callback.message.answer_audio(audio_file, title=title, performer=performer)
-                    return
+        parts = filename.split("_-_")
+        performer = parts[0].strip("_").replace("_", " ") if len(parts) > 1 else "Unknown"
+        title = parts[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ") if len(parts) > 1 else "Track"
 
-                await bot.send_chat_action(callback.message.chat.id, "record_voice")  # если больше 20Мб скачивет, а потом отправляет 
-                with open(filename, 'wb') as f:
-                    async for chunk in response.content.iter_chunked(2048):
-                        f.write(chunk)
-
-                await bot.send_chat_action(callback.message.chat.id, 'upload_document')
-
-                audio_file = FSInputFile(filename, filename=filename)
-                await callback.message.answer_audio(audio_file, title=title, performer=performer) # title='название', performer='исполнитель' 
-
-        os.remove(filename)
-        return
+        if file_size < 20 * 1024 * 1024: 
+            await upload_file_from_url(callback=callback, filename=filename, title=title, performer=performer, url=download_url)
+        else:
+            await send_file(callback=callback, filename=filename, title=title, performer=performer, url=download_url)
 
     except Exception as ex:
-        print(f"[!] (download) Ошибка загрузки: {ex}")
-        await callback.answer("Ошибка при загрузке. Попробуйте снова.", show_alert=True)
+        logger.info(f"[!] (download) Ошибка загрузки: {ex}")
+        await callback.answer("Ошибка при обработке. Попробуйте снова.", show_alert=True)
+
+
+# sending song without downloading
+async def upload_file_from_url(callback, filename: str, title: str, performer: str, url: str):
+    try:
+        await bot.send_chat_action(callback.message.chat.id, 'upload_document')
+        audio_file = URLInputFile(url=url, filename=filename)
+        
+        await callback.message.answer_audio(audio_file, title=title, performer=performer, timeout=60)
+    except Exception as ex:
+        logger.info(f"[!] (upload_file_from_url) Ошибка отправки: {ex}")
+        await callback.answer("Ошибка при отправке ссылки. Попробуйте снова.", show_alert=True)
+
+
+# sending song file from local 
+async def send_file(callback, filename: str, title: str, performer: str, url: str):
+    try:
+        await bot.send_chat_action(callback.message.chat.id, "record_voice")
+        async with aiohttp.ClientSession() as session:
+            async with semaphore, session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as response:
+                with open(filename, 'wb') as f:
+                    async for chunk in response.content.iter_chunked(64 * 1024):
+                        f.write(chunk)
+
+        audio_file = FSInputFile(filename, filename=filename)
+        await bot.send_chat_action(callback.message.chat.id, 'upload_document')
+        await callback.message.answer_audio(
+            audio_file,
+            title=title,
+            performer=performer,
+            timeout=90 
+        )  
+    except Exception as ex:
+        logger.info(f"[!] (send_file) Ошибка отправки: {ex}")
+        await callback.answer("Ошибка при отправке файла. Попробуйте снова.", show_alert=True)
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)
 
 # Get download link
-async def get_downloadlink(link: str) -> str: 
+async def get_downloadlink(link: str) -> str:
     async with aiohttp.ClientSession() as session:
         try:
             href = None
-            while not href:    
+            while not href:
                 async with semaphore, session.get(link) as response:
                     html = await response.text()
                     data = bs(html, 'html.parser')
@@ -370,12 +410,12 @@ async def get_downloadlink(link: str) -> str:
                         if href:
                             return sites["muzmo"]["base_url"]+href
         except Exception as ex:
-            print(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
+            logger.info(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
 
     return None
 
 async def main():
-    
+
     await dp.start_polling(bot)
 
 # Bot startup

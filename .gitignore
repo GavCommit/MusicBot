@@ -91,7 +91,6 @@ venv.bak/
 
 
 # Config
-config.py
 test.py
 MusicBot.conf
 parser.py
