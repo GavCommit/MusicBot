@@ -150,7 +150,7 @@ async def search_music_muzmo(query: str, pages: int = 3) -> list:
 #Async music parser hitmo
 async def search_music_hitmo(query: str, limit: int = 40) -> list:
     query = query.strip().replace(" ", '-')
-    url = f"https://rus.hitmotop.com/search?q={query}"
+    url = f"{sites['hitmo']['base_url']}/search?q={query}"
 
     songs_data = []
 
