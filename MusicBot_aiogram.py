@@ -1,6 +1,7 @@
 import os, re, json
 import aiohttp
 import asyncio
+import yt_dlp
 import configparser
 import difflib
 from aiogram import Bot, Dispatcher, F
@@ -18,7 +19,7 @@ config = configparser.ConfigParser()
 config.read(config_path)
 
 TOKEN = config.get("Settings", "TOKEN")
-FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # in Mbites
+FILE_SIZE_LIMIT = config.getint("Settings", "FILE_SIZE_LIMIT") * 1024 * 1024 # in bites
 PAGES_SCANNING = config.getint("Settings", "PAGES_SCANNING")
 SEARCH_RESULTS = config.getint("Settings", "SEARCH_RESULTS")
 SITE_PRIORITY = config.get("Settings", "SITE_PRIORITY", fallback="muzmo").split(",")
@@ -61,6 +62,19 @@ async def start(message: Message):
     await message.answer(greeting)
     await message.answer("Введите название песни или исполнителя:")
 
+#check for youtube url
+async def is_youtube_url(url: str) -> bool:
+    patterns = [
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=[\w-]+',
+        r'(?:https?:\/\/)?(?:www\.)?youtu\.be\/[\w-]+',
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/[\w-]+',
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/[\w-]+',
+    ]
+    for pattern in patterns:
+        if re.match(pattern, url):
+            return True
+    return False
+
 # Message handler (music search)
 @dp.message(F.text)
 async def handle_text(message: Message):
@@ -68,6 +82,20 @@ async def handle_text(message: Message):
     if len(query) < 3:
         await message.answer("Запрос для поиска не менее 3х символов")
         return
+    if query[:8] == "https://":
+        if await is_youtube_url(query):
+
+            filename, metadata = await download_from_yt(message=message, url=query)
+            performer = metadata.get("artist", "Unknown")
+            title = metadata.get("title", "Unknown")
+
+            class CallbackMock:
+                def __init__(self, message):
+                    self.message = message
+            callback = CallbackMock(message=message)
+            if filename:
+                await send_file(callback=callback, filename=filename, title=title, performer=performer)
+            return           
 
     site, music_data = await get_music(query=query) # парсит пока не найдет
     if music_data:
@@ -107,7 +135,6 @@ async def get_music(query:str):
         return sites.get(site_name)["code_letter"], music_data
     else:
         return '', []
-
 
 # Async music parser muzmo
 async def search_music_muzmo(query: str, pages: int = 3) -> list:
@@ -350,6 +377,67 @@ async def download(callback, filename: str, url: str):
     except Exception as ex:
         logger.info(f"[!] (download) Ошибка загрузки: {ex}")
         await callback.answer("Ошибка при обработке. Попробуйте снова.", show_alert=True)
+
+#download from YT using yt-dlp 
+async def download_from_yt(message, url: str) -> tuple[str, dict]:
+    try:
+        await message.answer("Скачивание музыки с ютуба, подождите.")
+        await bot.send_chat_action(message.chat.id, 'record_video')
+        
+        # get video info
+        opts_info = {
+            'quiet': True,
+            'extractor_args': {'youtube': {'player_client': ['tv_embedded']}}
+        }
+
+        with yt_dlp.YoutubeDL(opts_info) as ydl:
+            info = await asyncio.to_thread(ydl.extract_info, url, download=False)
+
+        # searching best format
+        best_audio = None
+        for f in info['formats']:
+            if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
+                if best_audio is None or f.get('abr', 0) > best_audio.get('abr', 0):
+                    best_audio = f
+
+        if not best_audio:
+            logger.info(f"[!] (download_from_yt) Формат аудио не найден. Ошибка загрузки: {ex}")
+            return None, None
+
+        # check max file size
+        size_bytes = best_audio.get('filesize') or best_audio.get('filesize_approx', 0)
+
+        if size_bytes > FILE_SIZE_LIMIT:
+            await message.answer(
+                f"Файл слишком большой ({size_bytes / 1024 / 1024:.2f} MB). Лимит: {FILE_SIZE_LIMIT / 1024 / 1024} MB."
+            )
+            return None, None    
+
+        # downloading
+        safe_name = info['title'].replace(" ", "_").replace("/", "_")
+        opts_download = {
+            'format': best_audio['format_id'],
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+            'outtmpl': f"{safe_name}.%(ext)s",
+            'quiet': True,
+            'extractor_args': {'youtube': {'player_client': ['tv_embedded']}}
+        }
+
+        with yt_dlp.YoutubeDL(opts_download) as ydl:
+            await asyncio.to_thread(ydl.extract_info, url, download=True)
+
+        # return file
+        filename = f"{safe_name}.mp3"
+        metadata = {
+            'title': info['title'],
+            'artist': info['uploader']
+        }
+
+        return filename, metadata
+
+    except Exception as ex:
+        logger.info(f"[!] (download_from_yt) Ошибка загрузки: {ex}")
+        await message.answer("Ошибка при загрузке видео. Попробуйте снова.", show_alert=True)
 
 # sending song file from local 
 async def send_file(callback, filename: str, title: str, performer: str):
