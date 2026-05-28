@@ -86,8 +86,12 @@ async def handle_text(message: Message):
         if await is_youtube_url(query):
 
             filename, metadata = await download_from_yt(message=message, url=query)
-            performer = metadata.get("artist", "Unknown")
-            title = metadata.get("title", "Unknown")
+            if metadata:
+                performer = metadata.get("artist", "Unknown")
+                title = metadata.get("title", "Unknown")
+            else:
+                performer = "Unknown"
+                title = "Unknown"
 
             class CallbackMock:
                 def __init__(self, message):
@@ -438,6 +442,7 @@ async def download_from_yt(message, url: str) -> tuple[str, dict]:
     except Exception as ex:
         logger.info(f"[!] (download_from_yt) Ошибка загрузки: {ex}")
         await message.answer("Ошибка при загрузке видео. Попробуйте снова.", show_alert=True)
+        return None, None
 
 # sending song file from local 
 async def send_file(callback, filename: str, title: str, performer: str):
