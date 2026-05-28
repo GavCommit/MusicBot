@@ -64,7 +64,7 @@ async def start(message: Message):
 # Message handler (music search)
 @dp.message(F.text)
 async def handle_text(message: Message):
-    query = message.text
+    query = message.text.strip()
     if len(query) < 3:
         await message.answer("Запрос для поиска не менее 3х символов")
         return
@@ -292,7 +292,7 @@ async def download_song(callback: CallbackQuery):
         logger.error("ID of button isn`t recognized")
         pass
 
-    await download(callback=callback, filename=filename, download_url=download_url)
+    await download(callback=callback, filename=filename, url=download_url)
 
 async def get_filename_from_button(button_mas: list, data: list) -> str:
     song = None
@@ -305,34 +305,23 @@ async def get_filename_from_button(button_mas: list, data: list) -> str:
     filename = song_without_timer.replace(" ", "_").replace("/", "_") + ".mp3"
     return filename
 
+#sync function for file saving
+def _save_chunk_to_file(filepath, chunk, mode='ab'):
+    with open(filepath, mode) as f:
+        f.write(chunk)
+
 # Downloading
-async def download(callback, filename: str, download_url: str):
+async def download(callback, filename: str, url: str):
     try:
         parts = filename.split("_-_")
         performer = parts[0].strip("_").replace("_", " ") if len(parts) > 1 else "Unknown"
         title = parts[1].strip("_").split(".mp3")[0].strip("_").replace("_", " ") if len(parts) > 1 else "Track"
 
-        await send_file(callback=callback, filename=filename, title=title, performer=performer, url=download_url)
+        if os.path.exists(filename):
+            os.remove(filename)
 
-    except Exception as ex:
-        logger.info(f"[!] (download) Ошибка загрузки: {ex}")
-        await callback.answer("Ошибка при обработке. Попробуйте снова.", show_alert=True)
+        await bot.send_chat_action(callback.message.chat.id, 'record_voice')
 
-# sending song without downloading
-# REMOVED BECAUSE OF LAG
-
-def _save_chunk_to_file(filepath, chunk, mode='ab'):
-    with open(filepath, mode) as f:
-        f.write(chunk)
-
-# sending song file from local 
-async def send_file(callback, filename: str, title: str, performer: str, url: str):
-    await bot.send_chat_action(callback.message.chat.id, 'record_voice')
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
-    try:
         async with aiohttp.ClientSession() as session:
             async with semaphore, session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
                 if response.status != 200:
@@ -352,8 +341,19 @@ async def send_file(callback, filename: str, title: str, performer: str, url: st
                 async for chunk in async_chunks:
                     mode = 'wb' if first_chunk else 'ab'
                     await asyncio.to_thread(_save_chunk_to_file, filename, chunk, mode)
-                    first_chunk = False
+                    first_chunk = False        
+            
+        await send_file(callback=callback, filename=filename, title=title, performer=performer)
+    except asyncio.TimeoutError:
+        logger.warning(f"[!] (download) Таймаут скачивания трека: {url}")
+        await callback.message.answer("Превышено время ожидания скачивания трека.")
+    except Exception as ex:
+        logger.info(f"[!] (download) Ошибка загрузки: {ex}")
+        await callback.answer("Ошибка при обработке. Попробуйте снова.", show_alert=True)
 
+# sending song file from local 
+async def send_file(callback, filename: str, title: str, performer: str):
+    try:
         audio_file = FSInputFile(filename, filename=filename)
         await bot.send_chat_action(callback.message.chat.id, 'upload_document')
      
@@ -364,11 +364,8 @@ async def send_file(callback, filename: str, title: str, performer: str, url: st
             timeout=90 
         )  
         
-    except asyncio.TimeoutError:
-        logger.warning(f"[!] Таймаут скачивания трека: {url}")
-        await callback.message.answer("Превышено время ожидания скачивания трека.")
     except Exception as ex:
-        logger.error(f"[!] (send_file_optimized) Ошибка отправки: {ex}")
+        logger.error(f"[!] (send_file) Ошибка отправки: {ex}")
         await callback.message.answer("Ошибка при отправке файла. Попробуйте другую песню.")
     finally:
         if os.path.exists(filename):
@@ -395,6 +392,7 @@ async def get_downloadlink(link: str) -> str:
             logger.info(f"[!] (get_downloadlink) Ошибка получения ссылки: {ex}")
 
     return None
+
 
 async def main():
 
